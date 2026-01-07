@@ -28,37 +28,39 @@ DARK_STYLE = mpf.make_mpf_style(
     marketcolors=mpf.make_marketcolors(up='#00FF00', down='#FF0000', inherit=True)
 )
 
-def get_pivots(df, window=5):
-    """Identifies significant local highs and lows."""
+def get_pivots(df, window=3):
+    """Finds local peaks and troughs."""
+    # Rolling window to find local max/min
     df['is_high'] = df['high'] == df['high'].rolling(window=window*2+1, center=True).max()
     df['is_low'] = df['low'] == df['low'].rolling(window=window*2+1, center=True).min()
-    highs = df[df['is_high']]
-    lows = df[df['is_low']]
-    return highs, lows
+    return df[df['is_high']], df[df['is_low']]
 
 def detect_trendline(df, side='upper'):
-    """Finds a valid trendline that has been touched multiple times."""
+    """Calculates a trendline requiring only 2 points for higher frequency."""
     highs, lows = get_pivots(df)
     points = highs if side == 'upper' else lows
     prices = points['high'] if side == 'upper' else points['low']
     
-    if len(points) < 3: return None, None # Need at least 3 points for a 'real' trendline
+    # CHANGED: Now only requires 2 touches instead of 3
+    if len(points) < 2:
+        return None, None
     
-    # Use the first and last pivot points to define the line
     x_coords = points.index
     y_coords = prices.values
     
-    slope, intercept, r_value, p_value, std_err = linregress(x_coords, y_coords)
+    # We use the last two significant pivots to draw the 'current' trendline
+    p1_x, p1_y = x_coords[-2], y_coords[-2]
+    p2_x, p2_y = x_coords[-1], y_coords[-1]
     
-    # Validation: R-squared should be high for a straight trendline
-    if abs(r_value) < 0.85: return None, None 
+    slope = (p2_y - p1_y) / (p2_x - p1_x)
+    intercept = p2_y - (slope * p2_x)
     
     full_x = np.arange(len(df))
     line = slope * full_x + intercept
     return line, slope
 
 def send_discord_with_chart(content, df, coin, timeframe, line_data):
-    # Zoom out to show the trendline origin (120 candles)
+    # Zoomed out to 120 candles for context
     df_plot = df.tail(120).copy()
     df_plot.index = pd.to_datetime(df_plot['date'], unit='ms')
     
@@ -84,14 +86,17 @@ def main():
     with open(DB_FILE, 'r') as f: db = json.load(f)
     bias = db.get("bias", "BULLISH")
     
-    # Test multiple timeframes for better coverage
-    timeframes = ['1h', '4h', '1d']
+    print(f"Starting scan. Global Bias: {bias}")
+    
+    timeframes = ['1h', '4h']
     
     try:
         url = "https://api.coingecko.com/api/v3/coins/markets"
-        coins = requests.get(url, params={'vs_currency': 'usd', 'per_page': 50}).json()
+        coins = requests.get(url, params={'vs_currency': 'usd', 'per_page': 100}).json()
         symbols = [c['symbol'].upper() for c in coins if c['symbol'].upper() not in BLACKLIST]
-    except: return
+    except Exception as e:
+        print(f"Error fetching coins: {e}")
+        return
 
     for coin in symbols:
         for tf in timeframes:
@@ -103,21 +108,25 @@ def main():
                     
                     if bias == "BULLISH":
                         line, slope = detect_trendline(df, 'upper')
-                        # Breakout: Previous candle close < line, Current candle close > line
-                        if line is not None and df['close'].iloc[-2] < line[-2] and df['close'].iloc[-1] > line[-1]:
-                            msg = f"🚀 **REAL TRENDLINE BREAKOUT**\n🪙 **${coin}**\n📅 **Timeframe:** {tf}\n✨ Validated by 3+ pivot points. Zoomed view."
-                            send_discord_with_chart(msg, df, coin, tf, line)
-                            break
+                        if line is not None:
+                            # Breakout: Cross from below the line to above the line
+                            if df['close'].iloc[-2] < line[-2] and df['close'].iloc[-1] > line[-1]:
+                                print(f"MATCH: {coin} breakout on {tf}")
+                                msg = f"🚀 **TRENDLINE BREAKOUT**\n🪙 **${coin}**\n📅 **Timeframe:** {tf}\n✨ 2-Point Resistance Broken"
+                                send_discord_with_chart(msg, df, coin, tf, line)
+                                break
                     
                     elif bias == "BEARISH":
                         line, slope = detect_trendline(df, 'lower')
-                        # Breakdown: Previous candle close > line, Current candle close < line
-                        if line is not None and df['close'].iloc[-2] > line[-2] and df['close'].iloc[-1] < line[-1]:
-                            msg = f"📉 **REAL TRENDLINE BREAKDOWN**\n🪙 **${coin}**\n📅 **Timeframe:** {tf}\n✨ Validated by 3+ pivot points. Zoomed view."
-                            send_discord_with_chart(msg, df, coin, tf, line)
-                            break
+                        if line is not None:
+                            # Breakdown: Cross from above the line to below the line
+                            if df['close'].iloc[-2] > line[-2] and df['close'].iloc[-1] < line[-1]:
+                                print(f"MATCH: {coin} breakdown on {tf}")
+                                msg = f"📉 **TRENDLINE BREAKDOWN**\n🪙 **${coin}**\n📅 **Timeframe:** {tf}\n✨ 2-Point Support Lost"
+                                send_discord_with_chart(msg, df, coin, tf, line)
+                                break
                 except: continue
-            time.sleep(1)
+            time.sleep(0.3)
 
 if __name__ == "__main__":
     main()

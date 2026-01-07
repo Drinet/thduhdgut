@@ -1,25 +1,20 @@
-name: Pattern Scanner Bot
+name: Pattern Bot
 on:
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
-
 jobs:
-  run-bot:
+  run:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install ccxt pandas numpy requests mplfinance
-      - name: Run Bot
+      - name: Install
+        run: pip install ccxt pandas numpy requests mplfinance
+      - name: Execute
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python bot.py

@@ -6,8 +6,6 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -15,18 +13,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install ccxt pandas numpy requests mplfinance scipy
+        run: pip install ccxt pandas numpy requests mplfinance
       - name: Execute
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           PYTHONUNBUFFERED: "1"
         run: python bot.py
-      - name: Commit Trade History
-        run: |
-          git config --global user.name "Bot"
-          git config --global user.email "bot@github.com"
-          git add trade_history.json || true
-          git commit -m "Update trade history" || true
-          git push || true

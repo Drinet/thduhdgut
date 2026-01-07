@@ -1,14 +1,12 @@
-name: Pattern Breakout Scanner
+name: Real Trendline Scanner
 on:
   schedule:
-    - cron: '0 * * * *' # Runs every hour
+    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -16,17 +14,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install ccxt pandas numpy requests mplfinance
+        run: pip install ccxt pandas numpy requests mplfinance scipy
       - name: Run Bot
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python bot.py
-      - name: Save Data
-        run: |
-          git config --global user.name "ScannerBot"
-          git config --global user.email "bot@trade.com"
-          git add trade_history.json
-          git commit -m "update logs [skip ci]" || exit 0
-          git push

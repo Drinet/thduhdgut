@@ -1,4 +1,4 @@
-name: Aggressive Pattern Scanner
+name: Pattern Scanner Bot
 on:
   schedule:
     - cron: '*/30 * * * *'
@@ -16,7 +16,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: pip install ccxt pandas numpy requests mplfinance scipy
+        run: |
+          pip install --upgrade pip
+          pip install ccxt pandas numpy requests mplfinance
       - name: Run Bot
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

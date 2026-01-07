@@ -1,7 +1,7 @@
-name: Trade Scanner
+name: Pattern Breakout Scanner
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '0 * * * *' # Runs every hour
   workflow_dispatch:
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install ccxt pandas requests mplfinance pandas-ta
+          pip install ccxt pandas numpy requests mplfinance
       - name: Run Bot
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -28,5 +28,5 @@ jobs:
           git config --global user.name "ScannerBot"
           git config --global user.email "bot@trade.com"
           git add trade_history.json
-          git commit -m "update trades [skip ci]" || exit 0
+          git commit -m "update logs [skip ci]" || exit 0
           git push

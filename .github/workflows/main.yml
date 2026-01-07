@@ -7,13 +7,19 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - uses: checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout Code
+        uses: actions/checkout@v4 # Fixed this line (added 'actions/')
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install
+          
+      - name: Install dependencies
         run: pip install ccxt pandas numpy requests mplfinance
-      - name: Run
+        
+      - name: Execute Bot
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PYTHONUNBUFFERED: "1"
         run: python bot.py

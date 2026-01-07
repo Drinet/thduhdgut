@@ -7,6 +7,11 @@ import json
 import time
 import mplfinance as mpf
 import io
+import sys
+
+# --- FORCED LOGGING ---
+def log(msg):
+    print(msg, flush=True)
 
 # --- CONFIG ---
 DISCORD_WEBHOOK = os.getenv('DISCORD_WEBHOOK_URL')
@@ -24,7 +29,8 @@ DARK_STYLE = mpf.make_mpf_style(
     marketcolors=mpf.make_marketcolors(up='#00FF00', down='#FF0000', inherit=True)
 )
 
-def get_pivots(df, window=5):
+def get_pivots(df, window=3):
+    """Detects local peaks/troughs. Smaller window = more patterns found."""
     df = df.copy()
     df['is_high'] = df['high'] == df['high'].rolling(window=window*2+1, center=True).max()
     df['is_low'] = df['low'] == df['low'].rolling(window=window*2+1, center=True).min()
@@ -38,6 +44,7 @@ def detect_trendline(df, side='upper'):
     if len(points) < 2:
         return None, None
     
+    # Use last 2 pivots to define line
     p1_idx, p1_y = points.index[-2], prices.values[-2]
     p2_idx, p2_y = points.index[-1], prices.values[-1]
     
@@ -49,12 +56,12 @@ def detect_trendline(df, side='upper'):
     return line, slope
 
 def send_discord_with_chart(content, df, coin, timeframe, line_data):
-    df_plot = df.tail(120).copy()
+    df_plot = df.tail(100).copy()
     df_plot.index = pd.to_datetime(df_plot['date'], unit='ms')
     ap = []
     if line_data is not None:
-        line_segment = line_data[-120:]
-        ap.append(mpf.make_addplot(line_segment, color='#FFFFFF', width=1.5, linestyle='--'))
+        line_segment = line_data[-100:]
+        ap.append(mpf.make_addplot(line_segment, color='#FFFFFF', width=1.3, linestyle='--'))
 
     buf = io.BytesIO()
     mpf.plot(df_plot, type='candle', style=DARK_STYLE, addplot=ap,
@@ -65,53 +72,59 @@ def send_discord_with_chart(content, df, coin, timeframe, line_data):
     requests.post(DISCORD_WEBHOOK, files=files)
 
 def main():
+    log("🚀 Starting Pattern Scanner...")
+    
     if not os.path.exists(DB_FILE):
         with open(DB_FILE, 'w') as f: json.dump({"bias": "BULLISH"}, f)
     with open(DB_FILE, 'r') as f: db = json.load(f)
     bias = db.get("bias", "BULLISH")
     
-    print(f"DEBUG: Current Bias is {bias}")
+    log(f"Current Global Bias: {bias}")
     
     try:
+        # Check top 200 coins
         url = "https://api.coingecko.com/api/v3/coins/markets"
-        coins = requests.get(url, params={'vs_currency': 'usd', 'per_page': 100}).json()
-        # FIX: Ensure symbol is clean and ready for Binance format
+        coins = requests.get(url, params={'vs_currency': 'usd', 'per_page': 200}).json()
         symbols = [c['symbol'].upper() for c in coins if c['symbol'].upper() not in BLACKLIST]
     except Exception as e:
-        print(f"CRITICAL: CoinGecko failed: {e}")
+        log(f"Error: {e}")
         return
 
-    for coin in symbols:
+    for i, coin in enumerate(symbols):
         ticker = f"{coin}/USDT"
-        print(f"Scanning {ticker}...")
+        # Progress log
+        if i % 20 == 0: log(f"Scanning progress: {i}/{len(symbols)}...")
+            
         for tf in ['1h', '4h']:
             try:
-                bars = ex.fetch_ohlcv(ticker, timeframe=tf, limit=200)
+                bars = ex.fetch_ohlcv(ticker, timeframe=tf, limit=150)
                 if not bars: continue
                 df = pd.DataFrame(bars, columns=['date','open','high','low','close','vol'])
                 
                 if bias == "BULLISH":
                     line, _ = detect_trendline(df, 'upper')
                     if line is not None:
-                        # Success condition: Price is above the line NOW
-                        if df['close'].iloc[-1] > line[-1]:
-                            print(f"!!! MATCH FOUND: {coin} {tf}")
-                            msg = f"🚀 **LONG**\n🪙 **${coin}**\n📅 **TF:** {tf}\n✨ Price above resistance!"
+                        # Success: Current price is at least 0.1% above the resistance line
+                        if df['close'].iloc[-1] > (line[-1] * 1.001):
+                            log(f"🔥 BULLISH BREAK: {ticker} on {tf}")
+                            msg = f"🚀 **LONG**\n🪙 **${coin}**\n📅 **TF:** {tf}\n✨ Trendline Resistance Broken"
                             send_discord_with_chart(msg, df, coin, tf, line)
-                            time.sleep(2)
+                            time.sleep(1)
                             break
+                
                 elif bias == "BEARISH":
                     line, _ = detect_trendline(df, 'lower')
                     if line is not None:
-                        if df['close'].iloc[-1] < line[-1]:
-                            print(f"!!! MATCH FOUND: {coin} {tf}")
-                            msg = f"📉 **SHORT**\n🪙 **${coin}**\n📅 **TF:** {tf}\n✨ Price below support!"
+                        # Success: Current price is at least 0.1% below the support line
+                        if df['close'].iloc[-1] < (line[-1] * 0.999):
+                            log(f"📉 BEARISH BREAK: {ticker} on {tf}")
+                            msg = f"📉 **SHORT**\n🪙 **${coin}**\n📅 **TF:** {tf}\n✨ Trendline Support Broken"
                             send_discord_with_chart(msg, df, coin, tf, line)
-                            time.sleep(2)
+                            time.sleep(1)
                             break
-            except Exception as e:
+            except:
                 continue
-        time.sleep(0.5) # Prevent Rate Limits
+    log("🏁 Scan finished.")
 
 if __name__ == "__main__":
     main()

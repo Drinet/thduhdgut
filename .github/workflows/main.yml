@@ -17,4 +17,5 @@ jobs:
       - name: Execute
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PYTHONUNBUFFERED: "1"
         run: python bot.py
